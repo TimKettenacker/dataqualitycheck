@@ -1,0 +1,419 @@
+---
+output: 
+  pdf_document:
+    latex_engine: xelatex
+mainfont: Angsana New
+fontsize: 11pt
+geometry: margin=1in
+
+title: "Data Quality Check"
+---
+
+# Ergebnis Namensanalyse
+## Überblick
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+require(ggplot2)
+require(ggthemes)
+require(plyr)
+require(rworldmap)
+
+raw <- read.csv("dq_check.dat", sep=";")
+
+# visualize name analysis
+
+## overview
+
+nang <- count(!is.na(raw$selected_namensAnalyse)) ## geprüft / nicht geprüft 
+nang$column <- c("nicht geprüft", "geprüft")
+nang.df = ddply(nang, .(column), transform, percent = round(freq/sum(nang$freq) * 100))
+```
+
+Von den erhaltenen Daten konnten `r nang.df$freq[1]` Datensätze `r nang.df$column[1]` werden (`r nang.df$percent[1]` %). `r nang.df$freq[2]` Datensätze wurden `r nang.df$column[2]` (`r nang.df$percent[2]` %).   
+
+
+## Bestimmung der Anrede
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=4, fig.align='center'}
+
+knag <- as.data.frame(table(raw$NameAnalysis_gender))
+knag[1] <- c("Anrede unbestimmt", "Anrede männlich", "Anrede weiblich", "unbekannt", "nicht analysiert")
+names(knag) <- c("Anredeprofile", "Anzahl")
+knag = ddply(knag, .(Anredeprofile), transform, Prozentual = Anzahl/sum(knag$Anzahl) * 100)
+knag = ddply(knag, .(Anredeprofile), transform, pos = (cumsum(Anzahl) - 0.5 * Anzahl))
+knag$label = paste0(sprintf("%.0f", knag$Prozentual), "%")
+
+ggplot(knag, aes(x = Anredeprofile, y = Anzahl, fill = Anredeprofile)) +
+  geom_bar(stat = "identity", width = .6) + ggtitle("Anredeprofile") + 
+  geom_text(aes(y = pos, label = label), size = 3) +
+  theme_gdocs() + scale_fill_pander() + theme(legend.position = "none", axis.title.x=element_blank(), axis.title.y=element_blank())
+
+```
+
+
+# Postalische Validierung
+## Überblick 
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+pv <- count(!is.na(raw$POST_class)) ## geprüft / nicht geprüft 
+pv$column <- c("nicht geprüft", "geprüft")
+pv.df = ddply(pv, .(column), transform, percent = round(freq/sum(pv$freq) * 100))
+```
+
+Von den erhaltenen Daten konnten `r pv.df$freq[1]` Datensätze `r pv.df$column[1]` werden (`r pv.df$percent[1]` %). `r pv.df$freq[2]` Datensätze wurden `r pv.df$column[2]` (`r pv.df$percent[2]` %).   
+
+## Ermittlung der Ergebnisklassen
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=4, fig.align='center'}
+
+pvrc <- as.data.frame(table(raw$POST_class))
+pvrc$Var1 <- as.character(pvrc$Var1)
+pvrc <- subset(pvrc, !pvrc$Var1 == "")
+pvrc$Var1[pvrc$Var1 == "1"] <- "bereits korrekt"
+pvrc$Var1[pvrc$Var1 == "2"] <- "sicher verändert"
+pvrc$Var1[pvrc$Var1 == "3"] <- "fehlertolerant verändert"
+pvrc$Var1[pvrc$Var1 == "4"] <- "mehrdeutig"
+pvrc$Var1[pvrc$Var1 == "5"] <- "nicht verändert"
+names(pvrc) <- c("Ergebnisklasse", "Anzahl")
+pvrc = ddply(pvrc, .(Ergebnisklasse), transform, Prozentual = Anzahl/sum(pvrc$Anzahl) * 100)
+pvrc = ddply(pvrc, .(Ergebnisklasse), transform, pos = (cumsum(Anzahl) - 0.5 * Anzahl))
+pvrc$label = paste0(sprintf("%.0f", pvrc$Prozentual), "%")
+
+ggplot(pvrc, aes(x = Ergebnisklasse, y = Anzahl, fill = Ergebnisklasse)) +
+  geom_bar(stat = "identity", width = .6) + ggtitle("Ergebnisklassen der Zustelladresse") + 
+  geom_text(aes(y = pos, label = label), size = 3) +
+  theme_gdocs() + scale_fill_pander() + theme(legend.position = "none", axis.title.x=element_blank(), axis.title.y=element_blank())
+
+```
+
+## Detailbetrachtung der Felder: Analyse der Postleitzahl
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=4, fig.align='center'}
+
+pvzca <- as.data.frame(table(raw$POST_res_zip))
+pvzca$Var1 <- as.character(pvzca$Var1)
+pvzca <- subset(pvzca, !pvzca$Var1 == "")
+pvzca$Var1[pvzca$Var1 == "OK"] <- "bereits korrekt"
+pvzca$Var1[pvzca$Var1 == "NF"] <- "PLZ nicht gefunden"
+pvzca$Var1[pvzca$Var1 == "NI"] <- "keine Eingabe"
+pvzca$Var1[pvzca$Var1 == "NC"] <- "nicht geprüft"
+pvzca$Var1[pvzca$Var1 == "PI"] <- "unvollständige PLZ in der Eingabe"
+pvzca$Var1[pvzca$Var1 == "C"] <- "PLZ wurde geändert"
+pvzca$Var1[pvzca$Var1 == "SC"] <- "die ersten beiden Stellen wurden geändert"
+pvzca$Var1[pvzca$Var1 == "SL"] <- "PLZ ist mehrdeutig"
+pvzca$Var1[pvzca$Var1 == "DF"] <- "Default PLZ (kleinste zustellbare PLZ)"
+pvzca$Var1[pvzca$Var1 == "DV"] <- "PLZ über Spezial-PLZ gefunden"
+
+pvzca = ddply(pvzca, .(Var1), transform, Prozentual = Freq/sum(pvzca$Freq) * 100)
+pvzca = ddply(pvzca, .(Var1), transform, pos = (cumsum(Freq) - 0.5 * Freq))
+pvzca$label = paste0(sprintf("%.0f", pvzca$Prozentual), "%")
+names(pvzca)[1:2] <- c("PLZ-Analyse", "Anzahl")
+
+ggplot(pvzca, aes(x = pvzca$`PLZ-Analyse`, y = Anzahl, fill = pvzca$`PLZ-Analyse`)) +
+  geom_bar(stat = "identity", width = .6) + ggtitle("Ergebnisse der PLZ-Analyse") + 
+  geom_text(aes(y = pos, label = label), size = 3) +
+  theme_gdocs() + scale_fill_pander() + coord_flip() + scale_x_discrete(labels = element_blank()) + 
+  theme(legend.position = "right", legend.title=element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank())
+
+```
+
+## Detailbetrachtung der Felder: Ortsanalyse
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=4, fig.align='center'}
+
+pvca <- as.data.frame(table(raw$POST_res_city))
+pvca$Var1 <- as.character(pvca$Var1)
+pvca <- subset(pvca, !pvca$Var1 == "")
+pvca$Var1[pvca$Var1 == "OK"] <- "bereits korrekt"
+pvca$Var1[pvca$Var1 == "NF"] <- "Ort nicht gefunden"
+pvca$Var1[pvca$Var1 == "NI"] <- "keine Eingabe"
+pvca$Var1[pvca$Var1 == "NC"] <- "nicht geprüft"
+pvca$Var1[pvca$Var1 == "PI"] <- "unvollständige PLZ in der Eingabe"
+pvca$Var1[pvca$Var1 == "C"] <- "Ort wurde geändert"
+pvca$Var1[pvca$Var1 == "SC"] <- "Ort wurde über das Archiv gefunden"
+pvca$Var1[pvca$Var1 == "SL"] <- "Ort ist mehrdeutig"
+pvca$Var1[pvca$Var1 == "DV"] <- "Ort wurde über Spezial-Ort gefunden"
+
+pvca = ddply(pvca, .(Var1), transform, Prozentual = Freq/sum(pvca$Freq) * 100)
+pvca = ddply(pvca, .(Var1), transform, pos = (cumsum(Freq) - 0.5 * Freq))
+pvca$label = paste0(sprintf("%.0f", pvca$Prozentual), "%")
+names(pvca)[1:2] <- c("Ortsanalyse", "Anzahl")
+
+ggplot(pvca, aes(x = pvca$`Ortsanalyse`, y = Anzahl, fill = pvca$`Ortsanalyse`)) +
+  geom_bar(stat = "identity", width = .6) + ggtitle("Ergebnisse der Ortsanalyse") + 
+  geom_text(aes(y = pos, label = label), size = 3) +
+  theme_gdocs() + scale_fill_pander() + coord_flip() + scale_x_discrete(labels = element_blank()) + 
+  theme(legend.position = "right", legend.title=element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank())
+
+```
+
+## Detailbetrachtung der Felder: Straßenanalyse
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=4, fig.align='center'}
+
+pvstra <- as.data.frame(table(raw$POST_res_str))
+pvstra$Var1 <- as.character(pvstra$Var1)
+pvstra <- subset(pvstra, !pvstra$Var1 == "")
+pvstra$Var1[pvstra$Var1 == "OK"] <- "bereits korrekt"
+pvstra$Var1[pvstra$Var1 == "NF"] <- "Straße nicht gefunden"
+pvstra$Var1[pvstra$Var1 == "NI"] <- "keine Eingabe"
+pvstra$Var1[pvstra$Var1 == "NC"] <- "nicht geprüft"
+pvstra$Var1[pvstra$Var1 == "NP"] <- "nicht geprüft wegen Postfachangabe im Straßenfeld"
+pvstra$Var1[pvstra$Var1 == "C"] <- "Straße wurde geändert"
+pvstra$Var1[pvstra$Var1 == "SC"] <- "Straße wurde umgeschlüsselt"
+pvstra$Var1[pvstra$Var1 == "SL"] <- "Straße ist mehrdeutig"
+
+pvstra = ddply(pvstra, .(Var1), transform, Prozentual = Freq/sum(pvstra$Freq) * 100)
+pvstra = ddply(pvstra, .(Var1), transform, pos = (cumsum(Freq) - 0.5 * Freq))
+pvstra$label = paste0(sprintf("%.0f", pvstra$Prozentual), "%")
+names(pvstra)[1:2] <- c("Straßenanalyse", "Anzahl")
+
+ggplot(pvstra, aes(x = pvstra$`Straßenanalyse`, y = Anzahl, fill = pvstra$`Straßenanalyse`)) +
+  geom_bar(stat = "identity", width = .6) + ggtitle("Ergebnisse der Straßenanalyse") + 
+  geom_text(aes(y = pos, label = label), size = 3) +
+  theme_gdocs() + scale_fill_pander() + coord_flip() + scale_x_discrete(labels = element_blank()) + 
+  theme(legend.position = "right", legend.title=element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank())
+
+```
+
+## Detailbetrachtung der Felder: Hausnummeranalyse
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=4, fig.align='center'}
+
+pvhnoa <- as.data.frame(table(raw$POST_res_hno))
+pvhnoa$Var1 <- as.character(pvhnoa$Var1)
+pvhnoa <- subset(pvhnoa, !pvhnoa$Var1 == "")
+pvhnoa$Var1[pvhnoa$Var1 == "OK"] <- "unverändert"
+pvhnoa$Var1[pvhnoa$Var1 == "NF"] <- "Hausnummer nicht gefunden"
+pvhnoa$Var1[pvhnoa$Var1 == "NI"] <- "keine Eingabe"
+pvhnoa$Var1[pvhnoa$Var1 == "NC"] <- "nicht geprüft"
+pvhnoa$Var1[pvhnoa$Var1 == "NP"] <- "nicht geprüft wegen Postfachangabe im Straßenfeld"
+pvhnoa$Var1[pvhnoa$Var1 == "C"] <- "Hausnummer geändert"
+pvhnoa$Var1[pvhnoa$Var1 == "SC"] <- "Hausnummer wurde umgeschlüsselt"
+pvhnoa$Var1[pvhnoa$Var1 == "SL"] <- "Hausnummer ist mehrdeutig"
+pvhnoa$Var1[pvhnoa$Var1 == "HR"] <- "Hausnummer innerhalb von Bereich"
+pvhnoa$Var1[pvhnoa$Var1 == "NN"] <- "Hausnummer entspricht nicht der Norm"
+pvhnoa$Var1[pvhnoa$Var1 == "SM"] <- "Hausnr. in Hausnummernbereich"
+
+pvhnoa = ddply(pvhnoa, .(Var1), transform, Prozentual = Freq/sum(pvhnoa$Freq) * 100)
+pvhnoa = ddply(pvhnoa, .(Var1), transform, pos = (cumsum(Freq) - 0.5 * Freq))
+pvhnoa$label = paste0(sprintf("%.0f", pvhnoa$Prozentual), "%")
+names(pvhnoa)[1:2] <- c("Hausnummernanalyse", "Anzahl")
+
+ggplot(pvhnoa, aes(x = pvhnoa$`Hausnummernanalyse`, y = Anzahl, fill = pvhnoa$`Hausnummernanalyse`)) +
+  geom_bar(stat = "identity", width = .6) + ggtitle("Ergebnisse der Hausnummernanalyse") + 
+  geom_text(aes(y = pos, label = label), size = 3) +
+  theme_gdocs() + scale_fill_pander() + coord_flip() + scale_x_discrete(labels = element_blank()) + 
+  theme(legend.position = "right", legend.title=element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank())
+
+```
+
+## Detailbetrachtung der Felder: Analyse des Postfachs
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=4, fig.align='center'}
+
+pvboxa <- as.data.frame(table(raw$POST_res_pobox))
+pvboxa$Var1 <- as.character(pvboxa$Var1)
+pvboxa <- subset(pvboxa, !pvboxa$Var1 == "")
+pvboxa$Var1[pvboxa$Var1 == "OK"] <- "Postfachangaben korrekt"
+pvboxa$Var1[pvboxa$Var1 == "CW"] <- "dieser Ort hat keine Postfächer"
+pvboxa$Var1[pvboxa$Var1 == "PL"] <- "für diesen Ort müssen Postfachnummern angegeben werden"
+pvboxa$Var1[pvboxa$Var1 == "PW"] <- "Postfachnummer ungültig"
+pvboxa$Var1[pvboxa$Var1 == "ZL"] <- "Postfach-PLZ muss angegeben werden, da Postfachnr. nicht eindeutig"
+pvboxa$Var1[pvboxa$Var1 == "NC"] <- "nicht geprüft"
+
+pvboxa = ddply(pvboxa, .(Var1), transform, Prozentual = Freq/sum(pvboxa$Freq) * 100)
+pvboxa = ddply(pvboxa, .(Var1), transform, pos = (cumsum(Freq) - 0.5 * Freq))
+pvboxa$label = paste0(sprintf("%.0f", pvboxa$Prozentual), "%")
+names(pvboxa)[1:2] <- c("Postfachanalyse", "Anzahl")
+
+ggplot(pvboxa, aes(x = pvboxa$`Postfachanalyse`, y = Anzahl, fill = pvboxa$`Postfachanalyse`)) +
+  geom_bar(stat = "identity", width = .6) + ggtitle("Ergebnisse der Postfachanalyse") + 
+  geom_text(aes(y = pos, label = label), size = 3) +
+  theme_gdocs() + scale_fill_pander() + coord_flip() + scale_x_discrete(labels = element_blank()) + 
+  theme(legend.position = "right", legend.title=element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank())
+
+```
+
+## Genauigkeit der Hausnummernprüfung
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=4, fig.align='center'}
+
+pvahno <- as.data.frame(table(raw$POST_hno_check))
+pvahno$Var1 <- as.character(pvahno$Var1)
+pvahno <- subset(pvahno, !pvahno$Var1 == "")
+pvahno$Var1[pvahno$Var1 == "OK"] <- "Hausnummer gefunden"
+pvahno$Var1[pvahno$Var1 == "NC"] <- "keine Prüfung möglich"
+pvahno$Var1[pvahno$Var1 == "NF"] <- "Hausnummer nicht gefunden"
+
+pvahno = ddply(pvahno, .(Var1), transform, Prozentual = Freq/sum(pvahno$Freq) * 100)
+pvahno = ddply(pvahno, .(Var1), transform, pos = (cumsum(Freq) - 0.5 * Freq))
+pvahno$label = paste0(sprintf("%.0f", pvahno$Prozentual), "%")
+names(pvahno)[1:2] <- c("Hausnummergenauigkeit", "Anzahl")
+
+ggplot(pvahno, aes(x = pvahno$`Hausnummergenauigkeit`, y = Anzahl, fill = pvahno$`Hausnummergenauigkeit`)) +
+  geom_bar(stat = "identity", width = .6) + ggtitle("Ergebnisse hausnummergenaue Prüfung") + 
+  geom_text(aes(y = pos, label = label), size = 3) +
+  theme_gdocs() + scale_fill_pander() + coord_flip() + scale_x_discrete(labels = element_blank()) + 
+  theme(legend.position = "right", legend.title=element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank())
+
+```
+
+# Geolokalisierung
+## Überblick 
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+geoc <- count(!is.na(raw$COOR_class)) ## geprüft / nicht geprüft 
+geoc$column <- c("nicht geprüft", "geprüft")
+geoc.df = ddply(geoc, .(column), transform, percent = round(freq/sum(geoc$freq) * 100))
+```
+
+Von den erhaltenen Daten konnten `r geoc.df$freq[1]` Datensätze `r geoc.df$column[1]` werden (`r geoc.df$percent[1]` %). `r geoc.df$freq[2]` Datensätze wurden `r geoc.df$column[2]` (`r geoc.df$percent[2]` %).  
+
+## Güte des Geotaggings
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=4, fig.align='center'}
+
+geocc <- as.data.frame(table(raw$COOR_class))
+geocc$Var1 <- as.character(geocc$Var1)
+geocc <- subset(geocc, !geocc$Var1 == "")
+geocc$Var1[geocc$Var1 == "1"] <- "korrekt gefunden"
+geocc$Var1[geocc$Var1 == "2"] <- "unsicher gefunden"
+geocc$Var1[geocc$Var1 == "3"] <- "Default-Informationen"
+geocc$Var1[geocc$Var1 == "4"] <- "mehrdeutige Adressen"
+geocc$Var1[geocc$Var1 == "5"] <- "nicht gefunden"
+names(geocc) <- c("Ergebnisklasse", "Anzahl")
+geocc = ddply(geocc, .(Ergebnisklasse), transform, Prozentual = Anzahl/sum(geocc$Anzahl) * 100)
+geocc = ddply(geocc, .(Ergebnisklasse), transform, pos = (cumsum(Anzahl) - 0.5 * Anzahl))
+geocc$label = paste0(sprintf("%.0f", geocc$Prozentual), "%")
+
+ggplot(geocc, aes(x = Ergebnisklasse, y = Anzahl, fill = Ergebnisklasse)) +
+  geom_bar(stat = "identity", width = .6) + ggtitle("Ergebnisklassen der Geokoordinaten") + 
+  geom_text(aes(y = pos, label = label), size = 3) +
+  theme_gdocs() + scale_fill_pander() + theme(legend.position = "none", axis.title.x=element_blank(), axis.title.y=element_blank())
+```
+
+## Ebenen der Geokoordinaten
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=4, fig.align='center'}
+
+geol <- as.data.frame(table(raw$COOR_valid_for))
+geol$Var1 <- as.character(geol$Var1)
+geol <- subset(geol, !geol$Var1 == "")
+geol$Var1[geol$Var1 == "0"] <- "keine Koordinaten"
+geol$Var1[geol$Var1 == "2"] <- "einzelne Hausnummer"
+geol$Var1[geol$Var1 == "3"] <- "Straßenabschnitt"
+geol$Var1[geol$Var1 == "4"] <- "ganze Straße"
+geol$Var1[geol$Var1 == "5"] <- "Ortsebene"
+
+geol = ddply(geol, .(Var1), transform, Prozentual = Freq/sum(geol$Freq) * 100)
+geol = ddply(geol, .(Var1), transform, pos = (cumsum(Freq) - 0.5 * Freq))
+geol$label = paste0(sprintf("%.0f", geol$Prozentual), "%")
+names(geol)[1:2] <- c("Ebene", "Anzahl")
+
+ggplot(geol, aes(x = geol$`Ebene`, y = Anzahl, fill = geol$`Ebene`)) +
+  geom_bar(stat = "identity", width = .6) + ggtitle("Gültigkeitsebene") + 
+  geom_text(aes(y = pos, label = label), size = 3) +
+  theme_gdocs() + scale_fill_pander() + coord_flip() + scale_x_discrete(labels = element_blank()) + 
+  theme(legend.position = "right", legend.title=element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank())
+
+```
+
+## Qualifizierung der Ortsebene
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=4, fig.align='center'}
+
+geolc <- as.data.frame(table(raw$COOR_city_valid))
+geolc$Var1 <- as.character(geolc$Var1)
+geolc <- subset(geolc, !geolc$Var1 == "")
+geolc$Var1[geolc$Var1 == "0"] <- "keine zusätzliche Einschränkung"
+geolc$Var1[geolc$Var1 == "1"] <- "PLZ"
+geolc$Var1[geolc$Var1 == "2"] <- "Ortsteil"
+geolc$Var1[geolc$Var1 == "3"] <- "PLZ und Ortsteil"
+
+geolc = ddply(geolc, .(Var1), transform, Prozentual = Freq/sum(geolc$Freq) * 100)
+geolc = ddply(geolc, .(Var1), transform, pos = (cumsum(Freq) - 0.5 * Freq))
+geolc$label = paste0(sprintf("%.0f", geolc$Prozentual), "%")
+names(geolc)[1:2] <- c("Ortsebene", "Anzahl")
+
+ggplot(geolc, aes(x = geolc$`Ortsebene`, y = Anzahl, fill = geolc$`Ortsebene`)) +
+  geom_bar(stat = "identity", width = .6) + ggtitle("Qualifizierung der Ortsebene") + 
+  geom_text(aes(y = pos, label = label), size = 3) +
+  theme_gdocs() + scale_fill_pander() + coord_flip() + scale_x_discrete(labels = element_blank()) + 
+  theme(legend.position = "right", legend.title=element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank())
+
+```
+
+# Dublettenprüfung
+## Überblick
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+
+dc <- count(!is.na(raw$DUP_type)) ## geprüft / nicht geprüft 
+dc$column <- c("nicht geprüft", "geprüft")
+dc.df = ddply(dc, .(column), transform, percent = round(freq/sum(dc$freq) * 100))
+```
+
+Von den erhaltenen Daten konnten `r dc.df$freq[1]` Datensätze `r dc.df$column[1]` werden (`r dc.df$percent[1]` %). `r dc.df$freq[2]` Datensätze wurden `r dc.df$column[2]` (`r dc.df$percent[2]` %).  
+
+## Dublettengruppen
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=4, fig.align='center'}
+
+dupty <- as.data.frame(table(raw$DUP_type))
+dupty$Var1 <- as.character(dupty$Var1)
+dupty <- subset(dupty, !dupty$Var1 == "")
+dupty$Var1[dupty$Var1 == "1"] <- "Singles"
+dupty$Var1[dupty$Var1 == "2"] <- "Kopfdubletten"
+dupty$Var1[dupty$Var1 == "3"] <- "Folgedubletten"
+names(dupty) <- c("Dublettentyp", "Anzahl")
+dupty = ddply(dupty, .(Dublettentyp), transform, Prozentual = Anzahl/sum(dupty$Anzahl) * 100)
+dupty = ddply(dupty, .(Dublettentyp), transform, pos = (cumsum(Anzahl) - 0.5 * Anzahl))
+dupty$label = paste0(sprintf("%.0f", dupty$Prozentual), "%")
+
+ggplot(dupty, aes(x = Dublettentyp, y = Anzahl, fill = Dublettentyp)) +
+  geom_bar(stat = "identity", width = .6) + ggtitle("Dublettenabgleich") + 
+  geom_text(aes(y = pos, label = label), size = 3) +
+  theme_gdocs() + scale_fill_pander() + theme(legend.position = "none", axis.title.x=element_blank(), axis.title.y=element_blank())
+
+```
+
+## Güte der Dublettenfindung
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.width=7, fig.height=4, fig.align='center'}
+
+dups <- as.data.frame(table(raw$DUP_comp))
+dups$Var1 <- as.character(dups$Var1)
+dups <- subset(dups, !dups$Var1 == "")
+dups$Var1[dups$Var1 == "0"] <- "Singles"
+dups$Var1[dups$Var1 == "1"] <- "identisch"
+dups$Var1[dups$Var1 == "2"] <- "geringe Toleranz"
+dups$Var1[dups$Var1 == "3"] <- "ausgeglichene Toleranz"
+dups$Var1[dups$Var1 == "4"] <- "große Toleranz"
+
+dups = ddply(dups, .(Var1), transform, Prozentual = Freq/sum(dups$Freq) * 100)
+dups = ddply(dups, .(Var1), transform, pos = (cumsum(Freq) - 0.5 * Freq))
+dups$label = paste0(sprintf("%.0f", dups$Prozentual), "%")
+names(dups)[1:2] <- c("Dublettensicherheit", "Anzahl")
+
+ggplot(dups, aes(x = dups$`Dublettensicherheit`, y = Anzahl, fill = dups$`Dublettensicherheit`)) +
+  geom_bar(stat = "identity", width = .6) + ggtitle("Aussagekraft der Dublettenfindung") + 
+  geom_text(aes(y = pos, label = label), size = 3) +
+  theme_gdocs() + scale_fill_pander() + coord_flip() + scale_x_discrete(labels = element_blank()) + 
+  theme(legend.position = "right", legend.title=element_blank(), axis.title.x=element_blank(), axis.title.y=element_blank())
+```
+
+# Verteilung der Daten auf Länder
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE, fig.align='center', echo=FALSE}
+
+countries <- as.data.frame(table(raw$SRC_CT_Country))
+countries <- subset(countries, !countries$Var1 == "")
+countries <- countries[order(-countries$Freq),] 
+names(countries) <- c("Länder", "Anzahl")
+map <- joinCountryData2Map(countries, joinCode = "ISO2", nameJoinColumn = "Länder")
+mapCountryData(map, nameColumnToPlot="Anzahl", catMethod = "fixedWidth", colourPalette = "topo")
+
+```
