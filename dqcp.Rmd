@@ -17,6 +17,7 @@ require(ggplot2)
 require(ggthemes)
 require(plyr)
 require(rworldmap)
+require(knitr)
 
 raw <- read.csv("dq_check.dat", sep=";")
 
@@ -411,9 +412,10 @@ ggplot(dups, aes(x = dups$`Dublettensicherheit`, y = Anzahl, fill = dups$`Dublet
 
 countries <- as.data.frame(table(raw$SRC_CT_Country))
 countries <- subset(countries, !countries$Var1 == "")
+countries <- ddply(countries, .(Var1), transform, Prozentual = round(Freq/sum(countries$Freq) * 100))
 countries <- countries[order(-countries$Freq),] 
-names(countries) <- c("Länder", "Anzahl")
+names(countries) <- c("Länder", "Anzahl", "Prozentual")
 map <- joinCountryData2Map(countries, joinCode = "ISO2", nameJoinColumn = "Länder")
 mapCountryData(map, nameColumnToPlot="Anzahl", catMethod = "fixedWidth", colourPalette = "topo")
-
+kable(countries, row.names = FALSE)
 ```
